@@ -16,6 +16,8 @@ import os
 from PIL import Image
 
 material_dir = './materials'
+material_class_dir = './material_class'
+split_materials_dir = './split_materials'
 
 headers = {'Connection': 'keep-alive',
            'Cache-Control': 'max-age=0',
@@ -29,8 +31,18 @@ headers = {'Connection': 'keep-alive',
 BLACK = 0
 WHITE = 255
 
+# create the dirs
+for d in [material_dir, material_class_dir, split_materials_dir]:
+    if not os.path.exists(d):
+        os.makedirs(d)
+
 
 def fetch_captcha(size):
+    '''
+    获取原始用于标记训练的二维码，并写入materials_dir
+    :param size:
+    :return:
+    '''
     for i in range(size):
         try:
             resp = requests.get('https://sso.toutiao.com/refresh_captcha/',
@@ -45,11 +57,15 @@ def fetch_captcha(size):
 
 def mark_captcha():
     '''
-    使用语音输入法，得到所有待标注素材的类标号，自动进行重命名
+    所有待标注素材的类标号写入文本文件，自动读取并进行重命名。关于标注，需要自行解决。
     :return:
     '''
-    # for path, dirs, files in os.walk()
-    class_str = 'arm5nrf6hdns'.upper()
+    class_str = ''
+    for path, dirs, files in os.walk(material_class_dir):
+        for f in files:
+            with open(os.path.join(path, f)) as fp:
+                class_str += fp.read().upper()
+
     idx = 0
     length = 4
     for path, dirs, files in os.walk(material_dir):
@@ -66,13 +82,15 @@ def split_captcha():
     choose_frame = (64, 18)
     for path, dirs, files in os.walk(material_dir):
         for f in files:
+            parts = f.split('.')
+            if parts[1] != 'gif':
+                continue
             img = Image.open(os.path.join(path, f))
             w, h = img.size
             img = img.convert('L')
             img = img.point(lambda i: 0 if i < 120 else 255)
-            img.show()
 
-            split_points = [20, 30, 40]
+            # 寻找能够覆盖验证码有效图像的最小矩形
             left_top = (9999, 9999)
             right_bottom = (0, 0)
             for x in range(w):
@@ -82,26 +100,22 @@ def split_captcha():
                     if img.getpixel((w - x - 1, h - y - 1)) == BLACK:
                         right_bottom = (max(w - x - 1, right_bottom[0]), max((h - y - 1), right_bottom[1]))
 
+            # 进行适当缩放，使得最终截取大小与choose_frame一致
             w_diff = right_bottom[0] - left_top[0] + 1 - choose_frame[0]
             h_diff = right_bottom[1] - left_top[1] + 1 - choose_frame[1]
             crop_left_top = (left_top[0] + round(w_diff / 2), left_top[1] + round(h_diff / 2))
 
             img = img.crop((crop_left_top[0], crop_left_top[1],
-                      choose_frame[0] + crop_left_top[0], choose_frame[1] + crop_left_top[1]))
+                            choose_frame[0] + crop_left_top[0], choose_frame[1] + crop_left_top[1]))
             for i in range(4):
-                croped = img.crop(((i * choose_frame[0] / 4), 0, (i + 1) * choose_frame[0] / 4, choose_frame[1]))
-                croped.show()
-            img.show()
-
-
-            for point in split_points:
-                pass
+                cropped = img.crop(((i * choose_frame[0] / 4), 0, (i + 1) * choose_frame[0] / 4, choose_frame[1]))
+                cropped.save(os.path.join(split_materials_dir, f.split('.')[0] + str(i) + '.jpg'))
 
 
 if __name__ == '__main__':
-    fetch_captcha(5000)
+    #fetch_captcha(5000)
     #mark_captcha()
-    #split_captcha()
+    split_captcha()
 
 
 
